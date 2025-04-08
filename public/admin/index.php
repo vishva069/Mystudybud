@@ -17,13 +17,58 @@ $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $page = max(1, $page); // Ensure page is at least 1
 $limit = 10;
 
-// Get users with pagination
-$users = $admin->getAllUsers($page, $limit);
-$totalUsers = $admin->getUserCount();
-$totalPages = ceil($totalUsers / $limit);
-
 // Get current tab
-$activeTab = isset($_GET['tab']) ? $_GET['tab'] : 'users';
+$activeTab = isset($_GET['tab']) ? $_GET['tab'] : 'dashboard';
+
+// Get dashboard statistics
+$stats = $admin->getDashboardStats();
+
+// Handle different tab data
+switch ($activeTab) {
+    case 'users':
+        $users = $admin->getAllUsers($page, $limit);
+        $totalUsers = $admin->getUserCount();
+        $totalPages = ceil($totalUsers / $limit);
+        break;
+        
+    case 'courses':
+        $courses = $admin->getAllCourses($page, $limit);
+        $totalCourses = $admin->getCourseCount();
+        $totalPages = ceil($totalCourses / $limit);
+        break;
+        
+    case 'login_activity':
+        $loginActivity = $admin->getLoginActivity($page, $limit);
+        break;
+        
+    case 'settings':
+        $systemSettings = $admin->getSystemSettings();
+        
+        // Handle settings update
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_settings'])) {
+            if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+                $settingsError = 'Invalid request';
+            } else {
+                try {
+                    foreach ($_POST as $key => $value) {
+                        if (strpos($key, 'setting_') === 0) {
+                            $settingKey = substr($key, 8); // Remove 'setting_' prefix
+                            $admin->updateSystemSetting($settingKey, $value);
+                        }
+                    }
+                    $settingsSuccess = 'Settings updated successfully';
+                    $systemSettings = $admin->getSystemSettings(); // Refresh settings
+                } catch (Exception $e) {
+                    $settingsError = $e->getMessage();
+                }
+            }
+        }
+        break;
+        
+    default:
+        // Dashboard is default
+        break;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -57,10 +102,10 @@ $activeTab = isset($_GET['tab']) ? $_GET['tab'] : 'users';
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="../dashboard.php">Dashboard</a>
+                        <a class="nav-link" href="../dashboard.php">Student Dashboard</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="index.php">Admin</a>
+                        <a class="nav-link active" href="index.php">Admin Panel</a>
                     </li>
                 </ul>
                 <div class="d-flex">
@@ -80,21 +125,283 @@ $activeTab = isset($_GET['tab']) ? $_GET['tab'] : 'users';
             <!-- Sidebar -->
             <div class="col-md-2 admin-sidebar p-0">
                 <div class="list-group list-group-flush">
+                    <a href="?tab=dashboard" class="list-group-item list-group-item-action <?php echo $activeTab === 'dashboard' ? 'active' : ''; ?>">
+                        <i class="bi bi-speedometer2 me-2"></i> Dashboard
+                    </a>
+                    <div class="list-group-item bg-light fw-bold small text-muted">
+                        USER MANAGEMENT
+                    </div>
                     <a href="?tab=users" class="list-group-item list-group-item-action <?php echo $activeTab === 'users' ? 'active' : ''; ?>">
                         <i class="bi bi-people me-2"></i> Users
+                    </a>
+                    <a class="nav-link <?php echo $activeTab === 'admin_users' ? 'active' : ''; ?>" href="?tab=admin_users">
+                        <i class="bi bi-shield-lock"></i> Admin Users
                     </a>
                     <a href="?tab=login_activity" class="list-group-item list-group-item-action <?php echo $activeTab === 'login_activity' ? 'active' : ''; ?>">
                         <i class="bi bi-door-open me-2"></i> Login Activity
                     </a>
-                    <a href="?tab=create_admin" class="list-group-item list-group-item-action <?php echo $activeTab === 'create_admin' ? 'active' : ''; ?>">
-                        <i class="bi bi-person-plus me-2"></i> Create Admin
+                    <div class="list-group-item bg-light fw-bold small text-muted">
+                        CONTENT MANAGEMENT
+                    </div>
+                    <a href="?tab=courses" class="list-group-item list-group-item-action <?php echo $activeTab === 'courses' ? 'active' : ''; ?>">
+                        <i class="bi bi-book me-2"></i> Courses
+                    </a>
+                    <a href="?tab=videos" class="list-group-item list-group-item-action <?php echo $activeTab === 'videos' ? 'active' : ''; ?>">
+                        <i class="bi bi-play-circle me-2"></i> Videos
+                    </a>
+                    <div class="list-group-item bg-light fw-bold small text-muted">
+                        SYSTEM
+                    </div>
+                    <a href="?tab=settings" class="list-group-item list-group-item-action <?php echo $activeTab === 'settings' ? 'active' : ''; ?>">
+                        <i class="bi bi-gear me-2"></i> Settings
+                    </a>
+                    <a href="?tab=logs" class="list-group-item list-group-item-action <?php echo $activeTab === 'logs' ? 'active' : ''; ?>">
+                        <i class="bi bi-file-text me-2"></i> System Logs
                     </a>
                 </div>
             </div>
             
             <!-- Main content -->
             <div class="col-md-10 p-4">
-                <?php if ($activeTab === 'users'): ?>
+                <?php if ($activeTab === 'dashboard'): ?>
+                    <!-- Dashboard tab -->
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h2><i class="bi bi-speedometer2"></i> Admin Dashboard</h2>
+                        <div>
+                            <span class="text-muted">Last updated: <?php echo date('Y-m-d H:i:s'); ?></span>
+                            <button class="btn btn-sm btn-outline-primary ms-2" onclick="window.location.reload()">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Statistics Cards -->
+                    <div class="row mb-4">
+                        <div class="col-md-3">
+                            <div class="card bg-primary text-white">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h6 class="card-title mb-0">Total Users</h6>
+                                            <h2 class="mt-2 mb-0"><?php echo $stats['total_users']; ?></h2>
+                                        </div>
+                                        <div class="fs-1 opacity-50">
+                                            <i class="bi bi-people"></i>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 small">
+                                        <span class="text-white-50"><?php echo $stats['active_users']; ?> active users</span>
+                                    </div>
+                                </div>
+                                <div class="card-footer bg-primary-dark d-flex justify-content-between py-2">
+                                    <span class="small">View Details</span>
+                                    <i class="bi bi-chevron-right small"></i>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-3">
+                            <div class="card bg-success text-white">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h6 class="card-title mb-0">Total Courses</h6>
+                                            <h2 class="mt-2 mb-0"><?php echo $stats['total_courses']; ?></h2>
+                                        </div>
+                                        <div class="fs-1 opacity-50">
+                                            <i class="bi bi-book"></i>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 small">
+                                        <span class="text-white-50">Educational content</span>
+                                    </div>
+                                </div>
+                                <div class="card-footer bg-success-dark d-flex justify-content-between py-2">
+                                    <span class="small">View Details</span>
+                                    <i class="bi bi-chevron-right small"></i>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-3">
+                            <div class="card bg-info text-white">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h6 class="card-title mb-0">Total Videos</h6>
+                                            <h2 class="mt-2 mb-0"><?php echo $stats['total_videos']; ?></h2>
+                                        </div>
+                                        <div class="fs-1 opacity-50">
+                                            <i class="bi bi-play-circle"></i>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 small">
+                                        <span class="text-white-50">Learning materials</span>
+                                    </div>
+                                </div>
+                                <div class="card-footer bg-info-dark d-flex justify-content-between py-2">
+                                    <span class="small">View Details</span>
+                                    <i class="bi bi-chevron-right small"></i>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-3">
+                            <div class="card bg-warning text-white">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h6 class="card-title mb-0">System Status</h6>
+                                            <h2 class="mt-2 mb-0">Active</h2>
+                                        </div>
+                                        <div class="fs-1 opacity-50">
+                                            <i class="bi bi-check-circle"></i>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 small">
+                                        <span class="text-white-50">All systems operational</span>
+                                    </div>
+                                </div>
+                                <div class="card-footer bg-warning-dark d-flex justify-content-between py-2">
+                                    <span class="small">View Details</span>
+                                    <i class="bi bi-chevron-right small"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <!-- Recent Registrations -->
+                        <div class="col-md-6 mb-4">
+                            <div class="card h-100">
+                                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                    <strong><i class="bi bi-person-plus me-2"></i> Recent Registrations</strong>
+                                    <a href="?tab=users" class="btn btn-sm btn-outline-primary">View All</a>
+                                </div>
+                                <div class="card-body p-0">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>User</th>
+                                                    <th>Email</th>
+                                                    <th>Date</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($stats['recent_registrations'] as $user): ?>
+                                                <tr>
+                                                    <td>
+                                                        <div class="d-flex align-items-center">
+                                                            <div class="avatar bg-light text-primary rounded-circle p-2 me-2">
+                                                                <i class="bi bi-person"></i>
+                                                            </div>
+                                                            <?php echo h($user['full_name']); ?>
+                                                        </div>
+                                                    </td>
+                                                    <td><?php echo h($user['email']); ?></td>
+                                                    <td><?php echo date('M d, Y', strtotime($user['created_at'])); ?></td>
+                                                </tr>
+                                                <?php endforeach; ?>
+                                                
+                                                <?php if (empty($stats['recent_registrations'])): ?>
+                                                <tr>
+                                                    <td colspan="3" class="text-center py-3">No recent registrations</td>
+                                                </tr>
+                                                <?php endif; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Recent Logins -->
+                        <div class="col-md-6 mb-4">
+                            <div class="card h-100">
+                                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                    <strong><i class="bi bi-door-open me-2"></i> Recent Login Activity</strong>
+                                    <a href="?tab=login_activity" class="btn btn-sm btn-outline-primary">View All</a>
+                                </div>
+                                <div class="card-body p-0">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>User</th>
+                                                    <th>Time</th>
+                                                    <th>Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($stats['recent_logins'] as $login): ?>
+                                                <tr>
+                                                    <td>
+                                                        <div class="d-flex align-items-center">
+                                                            <div class="avatar bg-light text-primary rounded-circle p-2 me-2">
+                                                                <i class="bi bi-person"></i>
+                                                            </div>
+                                                            <?php echo h($login['full_name']); ?>
+                                                        </div>
+                                                    </td>
+                                                    <td><?php echo date('M d, H:i', strtotime($login['login_time'])); ?></td>
+                                                    <td>
+                                                        <span class="badge bg-<?php echo $login['status'] === 'success' ? 'success' : 'danger'; ?>">
+                                                            <?php echo ucfirst($login['status']); ?>
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                                <?php endforeach; ?>
+                                                
+                                                <?php if (empty($stats['recent_logins'])): ?>
+                                                <tr>
+                                                    <td colspan="3" class="text-center py-3">No recent login activity</td>
+                                                </tr>
+                                                <?php endif; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Quick Actions -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-light">
+                            <strong><i class="bi bi-lightning-charge me-2"></i> Quick Actions</strong>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-3">
+                                    <a href="?tab=create_admin" class="btn btn-outline-primary w-100 d-flex flex-column align-items-center py-3">
+                                        <i class="bi bi-person-plus fs-3 mb-2"></i>
+                                        <span>Create Admin</span>
+                                    </a>
+                                </div>
+                                <div class="col-md-3">
+                                    <a href="?tab=courses&action=new" class="btn btn-outline-success w-100 d-flex flex-column align-items-center py-3">
+                                        <i class="bi bi-plus-circle fs-3 mb-2"></i>
+                                        <span>Add Course</span>
+                                    </a>
+                                </div>
+                                <div class="col-md-3">
+                                    <a href="?tab=settings" class="btn btn-outline-info w-100 d-flex flex-column align-items-center py-3">
+                                        <i class="bi bi-gear fs-3 mb-2"></i>
+                                        <span>System Settings</span>
+                                    </a>
+                                </div>
+                                <div class="col-md-3">
+                                    <a href="?tab=logs" class="btn btn-outline-secondary w-100 d-flex flex-column align-items-center py-3">
+                                        <i class="bi bi-file-text fs-3 mb-2"></i>
+                                        <span>View Logs</span>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                
+                <?php elseif ($activeTab === 'users'): ?>
                     <!-- Users tab -->
                     <div class="d-flex justify-content-between align-items-center mb-4">
                         <h2><i class="bi bi-people"></i> User Management</h2>
@@ -255,6 +562,133 @@ $activeTab = isset($_GET['tab']) ? $_GET['tab'] : 'users';
                                     </tbody>
                                 </table>
                             </div>
+                        </div>
+                    </div>
+                
+                <?php elseif ($activeTab === 'settings'): ?>
+                    <!-- Settings tab -->
+                    <div class="mb-4">
+                        <h2><i class="bi bi-gear"></i> System Settings</h2>
+                        <p class="text-muted">Configure system-wide settings and preferences</p>
+                    </div>
+                    
+                    <?php if (isset($settingsError)): ?>
+                        <div class="alert alert-danger"><?php echo h($settingsError); ?></div>
+                    <?php endif; ?>
+                    
+                    <?php if (isset($settingsSuccess)): ?>
+                        <div class="alert alert-success"><?php echo h($settingsSuccess); ?></div>
+                    <?php endif; ?>
+                    
+                    <div class="card">
+                        <div class="card-header bg-light">
+                            <ul class="nav nav-tabs card-header-tabs" id="settingsTabs" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active" id="general-tab" data-bs-toggle="tab" data-bs-target="#general" type="button" role="tab" aria-controls="general" aria-selected="true">General</button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="security-tab" data-bs-toggle="tab" data-bs-target="#security" type="button" role="tab" aria-controls="security" aria-selected="false">Security</button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="email-tab" data-bs-toggle="tab" data-bs-target="#email" type="button" role="tab" aria-controls="email" aria-selected="false">Email</button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="maintenance-tab" data-bs-toggle="tab" data-bs-target="#maintenance" type="button" role="tab" aria-controls="maintenance" aria-selected="false">Maintenance</button>
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="card-body">
+                            <form method="POST" action="?tab=settings">
+                                <input type="hidden" name="csrf_token" value="<?php echo generateCSRFToken(); ?>">
+                                <input type="hidden" name="update_settings" value="1">
+                                
+                                <div class="tab-content" id="settingsTabsContent">
+                                    <!-- General Settings Tab -->
+                                    <div class="tab-pane fade show active" id="general" role="tabpanel" aria-labelledby="general-tab">
+                                        <div class="mb-3">
+                                            <label for="setting_site_name" class="form-label">Site Name</label>
+                                            <input type="text" class="form-control" id="setting_site_name" name="setting_site_name" value="<?php echo h($systemSettings['site_name'] ?? 'StudyBud'); ?>">
+                                            <div class="form-text">The name of your learning platform</div>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="setting_site_description" class="form-label">Site Description</label>
+                                            <textarea class="form-control" id="setting_site_description" name="setting_site_description" rows="2"><?php echo h($systemSettings['site_description'] ?? 'A modern e-learning platform'); ?></textarea>
+                                            <div class="form-text">Brief description of your platform</div>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="setting_allow_registrations" class="form-label">User Registration</label>
+                                            <select class="form-select" id="setting_allow_registrations" name="setting_allow_registrations">
+                                                <option value="1" <?php echo ($systemSettings['allow_registrations'] ?? '1') == '1' ? 'selected' : ''; ?>>Enabled</option>
+                                                <option value="0" <?php echo ($systemSettings['allow_registrations'] ?? '1') == '0' ? 'selected' : ''; ?>>Disabled</option>
+                                            </select>
+                                            <div class="form-text">Allow new users to register on the platform</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Security Settings Tab -->
+                                    <div class="tab-pane fade" id="security" role="tabpanel" aria-labelledby="security-tab">
+                                        <div class="mb-3">
+                                            <label for="setting_max_login_attempts" class="form-label">Max Login Attempts</label>
+                                            <input type="number" class="form-control" id="setting_max_login_attempts" name="setting_max_login_attempts" value="<?php echo h($systemSettings['max_login_attempts'] ?? '5'); ?>" min="1" max="10">
+                                            <div class="form-text">Number of failed login attempts before temporary lockout</div>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="setting_password_expiry_days" class="form-label">Password Expiry (Days)</label>
+                                            <input type="number" class="form-control" id="setting_password_expiry_days" name="setting_password_expiry_days" value="<?php echo h($systemSettings['password_expiry_days'] ?? '90'); ?>" min="0" max="365">
+                                            <div class="form-text">Days until password expires (0 = never)</div>
+                                        </div>
+                                        
+                                        <div class="mb-3 form-check">
+                                            <input type="checkbox" class="form-check-input" id="setting_enforce_2fa" name="setting_enforce_2fa" value="1" <?php echo ($systemSettings['enforce_2fa'] ?? '0') == '1' ? 'checked' : ''; ?>>
+                                            <label class="form-check-label" for="setting_enforce_2fa">Enforce Two-Factor Authentication for Admins</label>
+                                            <div class="form-text">Require all administrators to use 2FA</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Email Settings Tab -->
+                                    <div class="tab-pane fade" id="email" role="tabpanel" aria-labelledby="email-tab">
+                                        <div class="mb-3">
+                                            <label for="setting_email_from" class="form-label">From Email Address</label>
+                                            <input type="email" class="form-control" id="setting_email_from" name="setting_email_from" value="<?php echo h($systemSettings['email_from'] ?? 'noreply@studybud.com'); ?>">
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="setting_email_from_name" class="form-label">From Name</label>
+                                            <input type="text" class="form-control" id="setting_email_from_name" name="setting_email_from_name" value="<?php echo h($systemSettings['email_from_name'] ?? 'StudyBud'); ?>">
+                                        </div>
+                                        
+                                        <div class="mb-3 form-check">
+                                            <input type="checkbox" class="form-check-input" id="setting_email_notifications" name="setting_email_notifications" value="1" <?php echo ($systemSettings['email_notifications'] ?? '1') == '1' ? 'checked' : ''; ?>>
+                                            <label class="form-check-label" for="setting_email_notifications">Enable Email Notifications</label>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Maintenance Settings Tab -->
+                                    <div class="tab-pane fade" id="maintenance" role="tabpanel" aria-labelledby="maintenance-tab">
+                                        <div class="mb-3">
+                                            <label for="setting_maintenance_mode" class="form-label">Maintenance Mode</label>
+                                            <select class="form-select" id="setting_maintenance_mode" name="setting_maintenance_mode">
+                                                <option value="0" <?php echo ($systemSettings['maintenance_mode'] ?? '0') == '0' ? 'selected' : ''; ?>>Disabled</option>
+                                                <option value="1" <?php echo ($systemSettings['maintenance_mode'] ?? '0') == '1' ? 'selected' : ''; ?>>Enabled</option>
+                                            </select>
+                                            <div class="form-text">When enabled, only administrators can access the site</div>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="setting_maintenance_message" class="form-label">Maintenance Message</label>
+                                            <textarea class="form-control" id="setting_maintenance_message" name="setting_maintenance_message" rows="3"><?php echo h($systemSettings['maintenance_message'] ?? 'We are currently performing scheduled maintenance. Please check back soon.'); ?></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="d-flex justify-content-end mt-4">
+                                    <button type="reset" class="btn btn-outline-secondary me-2">Reset</button>
+                                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 

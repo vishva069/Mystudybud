@@ -75,6 +75,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['unsave']) && isset($_
 </head>
 <body>
     <?php include 'includes/navbar.php'; ?>
+    
+    <style>
+        /* Fix for button hover color */
+        .btn-primary:hover, .btn-outline-primary:hover {
+            color: #000 !important;
+        }
+        
+        .btn-success:hover, .btn-outline-success:hover {
+            color: #000 !important;
+        }
+        
+        .btn-info:hover, .btn-outline-info:hover {
+            color: #000 !important;
+        }
+        
+        .btn-warning:hover, .btn-outline-warning:hover {
+            color: #000 !important;
+        }
+        
+        .btn-danger:hover, .btn-outline-danger:hover {
+            color: #000 !important;
+        }
+        
+        .btn-secondary:hover, .btn-outline-secondary:hover {
+            color: #fff !important;
+        }
+    </style>
 
     <div class="container py-5">
         <div class="row mb-4">
