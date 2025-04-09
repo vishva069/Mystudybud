@@ -108,7 +108,7 @@ class Database {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             last_login TIMESTAMP NULL,
             is_active BOOLEAN DEFAULT TRUE,
-            role ENUM('student', 'instructor', 'admin') DEFAULT 'student',
+            role ENUM('student', 'tutor', 'instructor', 'admin') DEFAULT 'student',
             INDEX idx_email (email),
             INDEX idx_username (username)
         ) ENGINE=InnoDB");
@@ -138,7 +138,25 @@ class Database {
             duration INT NOT NULL,
             order_index INT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            uploaded_by INT NOT NULL,
             FOREIGN KEY (course_id) REFERENCES courses(id),
+            FOREIGN KEY (uploaded_by) REFERENCES users(id),
+            INDEX idx_course_order (course_id, order_index)
+        ) ENGINE=InnoDB");
+        
+        // Create books table
+        $this->connection->exec("CREATE TABLE IF NOT EXISTS books (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            course_id INT NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            description TEXT,
+            file_path VARCHAR(255) NOT NULL,
+            file_size INT NOT NULL,
+            order_index INT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            uploaded_by INT NOT NULL,
+            FOREIGN KEY (course_id) REFERENCES courses(id),
+            FOREIGN KEY (uploaded_by) REFERENCES users(id),
             INDEX idx_course_order (course_id, order_index)
         ) ENGINE=InnoDB");
         

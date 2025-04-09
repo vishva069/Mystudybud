@@ -42,7 +42,24 @@ class Course {
                 position INTEGER DEFAULT 0,
                 is_free INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (course_id) REFERENCES courses(id)
+                uploaded_by INTEGER NOT NULL,
+                FOREIGN KEY (course_id) REFERENCES courses(id),
+                FOREIGN KEY (uploaded_by) REFERENCES users(id)
+            )");
+            
+            // Create books table
+            $this->db->exec("CREATE TABLE IF NOT EXISTS books (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                file_path TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                position INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                uploaded_by INTEGER NOT NULL,
+                FOREIGN KEY (course_id) REFERENCES courses(id),
+                FOREIGN KEY (uploaded_by) REFERENCES users(id)
             )");
             
             // Create enrollments table
@@ -184,18 +201,279 @@ class Course {
     }
     
     /**
-     * Get course by ID
+     * Get courses by instructor ID
      */
-    public function getCourseById($id) {
+    public function getCoursesByInstructor($instructorId) {
         try {
             $stmt = $this->db->prepare(
-                "SELECT c.*, u.username as instructor_name, u.full_name as instructor_full_name,
+                "SELECT c.*, 
+                (SELECT COUNT(*) FROM videos WHERE course_id = c.id) as video_count,
+                (SELECT COUNT(*) FROM enrollments WHERE course_id = c.id) as enrollment_count
+                FROM courses c
+                WHERE c.instructor_id = :instructor_id
+                ORDER BY c.created_at DESC"
+            );
+            
+            $stmt->execute([':instructor_id' => $instructorId]);
+            return $stmt->fetchAll();
+        } catch (PDOException $e) {
+            error_log("Get instructor courses error: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Create a new course
+     */
+    public function createCourse($title, $description, $instructorId, $category = null, $level = null) {
+        try {
+            $stmt = $this->db->prepare(
+                "INSERT INTO courses (title, description, instructor_id, status) 
+                 VALUES (:title, :description, :instructor_id, 'draft')"
+            );
+            
+            $stmt->execute([
+                ':title' => $title,
+                ':description' => $description,
+                ':instructor_id' => $instructorId
+            ]);
+            
+            $courseId = $this->db->lastInsertId();
+            
+            // Log the successful course creation
+            error_log("Course created successfully with ID: " . $courseId);
+            
+            return $courseId;
+        } catch (PDOException $e) {
+            error_log("Create course error: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Update a course
+     */
+    public function updateCourse($courseId, $data) {
+        try {
+            $fields = [];
+            $params = [':id' => $courseId];
+            
+            foreach ($data as $key => $value) {
+                if ($key !== 'id') {
+                    $fields[] = "`$key` = :$key";
+                    $params[":$key"] = $value;
+                }
+            }
+            
+            $sql = "UPDATE courses SET " . implode(', ', $fields) . " WHERE id = :id";
+            $stmt = $this->db->prepare($sql);
+            
+            return $stmt->execute($params);
+        } catch (PDOException $e) {
+            error_log("Update course error: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Get videos for a course
+     */
+    public function getVideos($courseId) {
+        try {
+            $stmt = $this->db->prepare(
+                "SELECT * FROM videos 
+                 WHERE course_id = :course_id 
+                 ORDER BY position ASC, created_at ASC"
+            );
+            
+            $stmt->execute([':course_id' => $courseId]);
+            return $stmt->fetchAll();
+        } catch (PDOException $e) {
+            error_log("Get videos error: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Get books for a course
+     */
+    public function getBooks($courseId) {
+        try {
+            $stmt = $this->db->prepare(
+                "SELECT * FROM books 
+                 WHERE course_id = :course_id 
+                 ORDER BY position ASC, created_at ASC"
+            );
+            
+            $stmt->execute([':course_id' => $courseId]);
+            return $stmt->fetchAll();
+        } catch (PDOException $e) {
+            error_log("Get books error: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Add a video to a course
+     */
+    public function addVideo($courseId, $title, $description, $videoUrl, $duration, $position, $uploadedBy) {
+        try {
+            $stmt = $this->db->prepare(
+                "INSERT INTO videos (course_id, title, description, video_url, duration, position, uploaded_by) 
+                 VALUES (:course_id, :title, :description, :video_url, :duration, :position, :uploaded_by)"
+            );
+            
+            $stmt->execute([
+                ':course_id' => $courseId,
+                ':title' => $title,
+                ':description' => $description,
+                ':video_url' => $videoUrl,
+                ':duration' => $duration,
+                ':position' => $position,
+                ':uploaded_by' => $uploadedBy
+            ]);
+            
+            return $this->db->lastInsertId();
+        } catch (PDOException $e) {
+            error_log("Add video error: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Add a book to a course
+     */
+    public function addBook($courseId, $title, $description, $filePath, $fileSize, $position, $uploadedBy) {
+        try {
+            $stmt = $this->db->prepare(
+                "INSERT INTO books (course_id, title, description, file_path, file_size, position, uploaded_by) 
+                 VALUES (:course_id, :title, :description, :file_path, :file_size, :position, :uploaded_by)"
+            );
+            
+            $stmt->execute([
+                ':course_id' => $courseId,
+                ':title' => $title,
+                ':description' => $description,
+                ':file_path' => $filePath,
+                ':file_size' => $fileSize,
+                ':position' => $position,
+                ':uploaded_by' => $uploadedBy
+            ]);
+            
+            return $this->db->lastInsertId();
+        } catch (PDOException $e) {
+            error_log("Add book error: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Delete a video
+     */
+    public function deleteVideo($videoId, $courseId, $userId) {
+        try {
+            // Get video file path first
+            $stmt = $this->db->prepare(
+                "SELECT video_url FROM videos 
+                 WHERE id = :id AND course_id = :course_id AND uploaded_by = :uploaded_by"
+            );
+            
+            $stmt->execute([
+                ':id' => $videoId,
+                ':course_id' => $courseId,
+                ':uploaded_by' => $userId
+            ]);
+            
+            $video = $stmt->fetch();
+            
+            if (!$video) {
+                return false;
+            }
+            
+            // Delete the video file if it exists
+            if (file_exists($video['video_url'])) {
+                unlink($video['video_url']);
+            }
+            
+            // Delete from database
+            $stmt = $this->db->prepare(
+                "DELETE FROM videos 
+                 WHERE id = :id AND course_id = :course_id AND uploaded_by = :uploaded_by"
+            );
+            
+            return $stmt->execute([
+                ':id' => $videoId,
+                ':course_id' => $courseId,
+                ':uploaded_by' => $userId
+            ]);
+        } catch (PDOException $e) {
+            error_log("Delete video error: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Delete a book
+     */
+    public function deleteBook($bookId, $courseId, $userId) {
+        try {
+            // Get book file path first
+            $stmt = $this->db->prepare(
+                "SELECT file_path FROM books 
+                 WHERE id = :id AND course_id = :course_id AND uploaded_by = :uploaded_by"
+            );
+            
+            $stmt->execute([
+                ':id' => $bookId,
+                ':course_id' => $courseId,
+                ':uploaded_by' => $userId
+            ]);
+            
+            $book = $stmt->fetch();
+            
+            if (!$book) {
+                return false;
+            }
+            
+            // Delete the book file if it exists
+            if (file_exists($book['file_path'])) {
+                unlink($book['file_path']);
+            }
+            
+            // Delete from database
+            $stmt = $this->db->prepare(
+                "DELETE FROM books 
+                 WHERE id = :id AND course_id = :course_id AND uploaded_by = :uploaded_by"
+            );
+            
+            return $stmt->execute([
+                ':id' => $bookId,
+                ':course_id' => $courseId,
+                ':uploaded_by' => $userId
+            ]);
+        } catch (PDOException $e) {
+            error_log("Delete book error: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Get course by ID
+     */
+    public function getCourseById($id, $includeUnpublished = false) {
+        try {
+            $sql = "SELECT c.*, u.username as instructor_name, u.full_name as instructor_full_name,
                 (SELECT COUNT(*) FROM videos WHERE course_id = c.id) as video_count,
                 (SELECT COUNT(*) FROM enrollments WHERE course_id = c.id) as enrollment_count
                 FROM courses c
                 JOIN users u ON c.instructor_id = u.id
-                WHERE c.id = :id AND c.is_published = 1"
-            );
+                WHERE c.id = :id";
+                
+            if (!$includeUnpublished) {
+                $sql .= " AND c.is_published = 1";
+            }
+            
+            $stmt = $this->db->prepare($sql);
             
             $stmt->execute([':id' => $id]);
             return $stmt->fetch();
@@ -560,9 +838,9 @@ class Course {
     }
     
     /**
-     * Create a new course
+     * Create a course with full data array
      */
-    public function createCourse($data) {
+    public function createCourseFromData($data) {
         try {
             $stmt = $this->db->prepare(
                 "INSERT INTO courses (
@@ -594,9 +872,9 @@ class Course {
     }
     
     /**
-     * Add a video to a course
+     * Add a video to a course from data array
      */
-    public function addVideo($data) {
+    public function addVideoFromData($data) {
         try {
             $stmt = $this->db->prepare(
                 "INSERT INTO videos (
