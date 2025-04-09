@@ -73,7 +73,7 @@ $featuredCourses = $courseModel->getFeaturedCourses(3);
                         <i class="bi bi-person-circle me-1"></i> <?php echo h($user['username']); ?>
                     </a>
                     <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item" href="profile.php">My Profile</a></li>
+                        <li><a class="dropdown-item" href="account.php">My Account</a></li>
                         <li><a class="dropdown-item" href="settings.php">Settings</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="logout.php">Logout</a></li>
